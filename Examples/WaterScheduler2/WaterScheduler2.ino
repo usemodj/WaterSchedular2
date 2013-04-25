@@ -80,7 +80,6 @@ int keyIndex = 0;                 // your network key Index number (needed only 
 int status = WL_IDLE_STATUS;
 
 WiFiServer server(80);
-WiFiClient client;
 
 void setup ()
 {
@@ -137,10 +136,10 @@ void loop() {
   }  //end of serial.available()
  
   // listen for incoming clients
-  client = server.available();
+  WiFiClient client = server.available();
   if (client) {
     Serial.println("WiFi Server available...");
-     processHttpMessage(client);
+    processHttpMessage(client);
     // give the web browser time to receive the data
     Alarm.delay(1);
      // close the connection:
@@ -195,7 +194,7 @@ void processHttpMessage(WiFiClient client){
             client.print(storage[i].duration);
             client.print("</td><td>");
             client.print(storage[i].pin);
-            client.print("</td></tr></table>");
+            client.println("</td></tr></table>");
           }
           client.println("</body></html>");
            break;
