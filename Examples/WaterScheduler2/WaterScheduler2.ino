@@ -38,6 +38,7 @@ Patterns
 #define TIME_REQUEST  7    // ASCII bell character requests a time sync message 
 #define ALARM_HEADER "A"  // Header tag for serial alarm message: A minute hour weekday duration pin#
 #define ALARM_CLEAR_HEADER "C"  //Header tag for serial alarm clear
+#define ALARM_LIST_HEADER "L"
 #define MAX_STORAGE  7  //dtNBR_ALARMS
 
 #define timeStatusPin  13
@@ -45,14 +46,14 @@ Patterns
 // Example settings structure
 typedef struct StoreStruct {
   //char version[4];   // This is for mere detection if they are your settings
-  uint8_t version;
+  uint8_t id;
   uint8_t minute, hour, weekday, duration, pin;          // weekday: sunday(1)
 } 
 Storage;
 
 // serial time text: "T minute hour day month year"
 const char  timePattern[] = "T%s*(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)";
-// serial alarm text: A version minute hour dayOfWeek(Sun:1) duration  pin#
+// serial alarm text: A id minute hour dayOfWeek(Sun:1) duration  pin#
 const char  alarmPattern[] = "A%s*(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)";
 void copyStorage(Storage *target, Storage *source);
 void registerAlarms( Storage *storagePtr, int count);
@@ -62,7 +63,7 @@ Storage storage[MAX_STORAGE];
 
 int  rows  = 0; //storage rows
 bool storageChanged = false;
-bool timeBlink = false;
+//bool timeBlink = false;
 
 void setup ()
 {
@@ -76,6 +77,7 @@ void setup ()
   rows = loadConfig();
   registerAlarms( storage, rows);
 
+  //set time
   //setSyncProvider( requestSync);  //set function to call when sync required
   Serial.println("Waiting for time sync( T minute hour day month year):");
 }  // end of setup  
@@ -91,7 +93,6 @@ void loop() {
       registerAlarms( storage, rows);
     }
   }
-
 
   if(timeStatus() ==  timeNotSet){
     //Serial.println("Waiting for time sync ( T minute hour day month year):");
@@ -142,8 +143,8 @@ void registerAlarms( Storage *storagePtr, int count)
       break;
     }
 
-    Serial.print("set alarmRepeat...version: ");
-    Serial.println(storagePtr->version);
+    Serial.print("set alarmRepeat...id: ");
+    Serial.println(storagePtr->id);
     // create the alarms 
     Alarm.alarmRepeat( dow, storagePtr->hour,storagePtr->minute,0,weeklyAlarm2, storagePtr);  // h:m:s every dayOfWeek: Saturday(1) 
     storagePtr++;
@@ -170,10 +171,10 @@ void processSyncMessage() {
       inStr.trim();
       //String.length(): Returns the length of the String, in characters. (Note that this doesn't include a trailing null character.)
       inStr.toCharArray(charArr, inStr.length()+1);
-      charArr[inStr.length()+1] = '\0';
+      charArr[inStr.length()] = '\0';
 
-      Serial.print("charArr: "); 
-      Serial.println(charArr);
+      //Serial.print("charArr: "); 
+      //Serial.println(charArr);
       //Serial.print("inStr.length: "); Serial.println(inStr.length());
       //Serial.print("charArr.length: "); Serial.println(strlen(charArr));
       //MatchState ms(charArr);
@@ -199,6 +200,10 @@ void processSyncMessage() {
         //free alarms
         freeAlarms();
       }
+      else if(inStr.startsWith( ALARM_LIST_HEADER)){
+        printAlarms( rows);
+      }
+      
       break;
     }   
   } // end of while loop 
@@ -213,6 +218,25 @@ void freeAlarms(){
 
   for(int id =0;  id < count; id++){
     Alarm.free(id);
+  }
+}
+
+void printAlarms(int count){
+  Serial.print("List of Alarms: "); Serial.println( count);
+  for(int i = 0; i < count; i++){
+    Serial.print( "id: "); 
+    Serial.println(storage[i].id);
+    Serial.print("minute: "); 
+    Serial.println(storage[i].minute);
+    Serial.print("hour: "); 
+    Serial.println(storage[i].hour);
+    Serial.print("weekday: "); 
+    Serial.println(storage[i].weekday);
+    Serial.print("duration: "); 
+    Serial.println(storage[i].duration);
+    Serial.print("pin#: "); 
+    Serial.println(storage[i].pin);
+    Serial.println();
   }
 }
 
@@ -272,8 +296,8 @@ const MatchState & ms)      // MatchState in use (to get captures)
   Serial.print ("Matched: ");
   Serial.write ((byte *) match, length);
   Serial.println ();
-  //String(100+rows, DEC).toCharArray(storage[rows].version, 4);
-  //Serial.print("version: "); Serial.println(storage[rows].version);
+  //String(100+rows, DEC).toCharArray(storage[rows].id, 4);
+  //Serial.print("id: "); Serial.println(storage[rows].id);
 
   for (byte i = 0; i < ms.level; i++)
   {
@@ -285,10 +309,10 @@ const MatchState & ms)      // MatchState in use (to get captures)
     switch(i){
     case 0: 
       //Serial.print("cap0: "); Serial.println(cap);
-      //strncpy(storage[rows].version, cap, 3);
-      //storage[rows].version[3] = '\0';
-      //String(cap).toCharArray(storage[rows].version, 4);
-      inStorage.version = atoi(cap);
+      //strncpy(storage[rows].id, cap, 3);
+      //storage[rows].id[3] = '\0';
+      //String(cap).toCharArray(storage[rows].id, 4);
+      inStorage.id = atoi(cap);
       break;
     case 1: 
       inStorage.minute =  atoi(cap);
@@ -312,9 +336,9 @@ const MatchState & ms)      // MatchState in use (to get captures)
   //update or add alarm storage
   byte j = 0;
   for(j =0; j < count; j++){
-    if( inStorage.version == storage[j].version){
-      Serial.print(" update alarm repeat...version:"); 
-      Serial.println( inStorage.version);
+    if( inStorage.id == storage[j].id){
+      Serial.print(" update alarm repeat...id:"); 
+      Serial.println( inStorage.id);
       copyStorage( &storage[j], &inStorage);
       storageChanged = true;
       break; 
@@ -326,7 +350,7 @@ const MatchState & ms)      // MatchState in use (to get captures)
   if( j >= count && j < MAX_STORAGE){
     Serial.println(" add new alarm repeat...");
     copyStorage( &storage[j], &inStorage); 
-    //Serial.print("storage[j].version:"); Serial.println(storage[j].version);
+    //Serial.print("storage[j].id:"); Serial.println(storage[j].id);
     rows++;
     Serial.print("callback rows: "); 
     Serial.println(rows);
@@ -380,21 +404,21 @@ int parseAlarmMessage(char *pmsg, int count){
       Serial.println( pstr[i]);
     }
 
-    inStorage.version = (cap[0]);
+    inStorage.id = (cap[0]);
     inStorage.minute =  (cap[1]);
     inStorage.hour =  (cap[2]);
     inStorage.weekday = (cap[3]);
     inStorage.duration =  (cap[4]);
     inStorage.pin =  (cap[5]);
-    Serial.print("---version:"); 
-    Serial.println(inStorage.version);
+    Serial.print("---id:"); 
+    Serial.println(inStorage.id);
 
     //update or add alarm storage
     int k = 0;
     for(k =0; k < count; k++){
-      if( inStorage.version == storage[k].version){
-        Serial.print(" update alarm repeat...version:"); 
-        Serial.println( inStorage.version);
+      if( inStorage.id == storage[k].id){
+        Serial.print(" update alarm repeat...id:"); 
+        Serial.println( inStorage.id);
         copyStorage( &storage[k], &inStorage);
         storageChanged = true;
         break; 
@@ -406,7 +430,7 @@ int parseAlarmMessage(char *pmsg, int count){
     if( k >= count && k < MAX_STORAGE){
       Serial.println(" add new alarm repeat...");
       copyStorage( &storage[k], &inStorage); 
-      //Serial.print("storage[j].version:"); Serial.println(storage[j].version);
+      //Serial.print("storage[j].id:"); Serial.println(storage[j].id);
       count++;
       Serial.print("callback rows: "); 
       Serial.println(rows);
@@ -422,7 +446,7 @@ int parseAlarmMessage(char *pmsg, int count){
 
 
 void copyStorage(Storage *target, Storage *source){
-  target->version = source->version;
+  target->id = source->id;
   target->minute = source->minute;
   target->hour = source->hour;
   target->weekday = source->weekday;
@@ -431,32 +455,33 @@ void copyStorage(Storage *target, Storage *source){
 }
 /* callback function */
 void weeklyAlarm2(void *pUserData){
-  Serial.print("weeklyAlarm calling...alarmId: ");
-  Serial.println(Alarm.getTriggeredAlarmId());
-
   Storage *pStorage = (Storage *)pUserData;
   setHigh(pStorage->pin);
-  Alarm.timerOnce(pStorage->duration * 60, setLow, pUserData); //second
+  Alarm.timerOnce((pStorage->duration * 60), setLow, pUserData); //second
+  
+  Serial.print("weeklyAlarm calling...alarmId: ");
+  Serial.println(Alarm.getTriggeredAlarmId());
 }
+
 /* callback function */
 void setLow(void * pUserData){
   Storage * pStorage = (Storage *)pUserData;
-  Serial.print("setLow calling...alarmId: "); 
-  Serial.println(Alarm.getTriggeredAlarmId());
   pinMode(pStorage->pin, OUTPUT);
   digitalWrite(pStorage->pin, LOW);
+  Serial.print("setLow calling...alarmId: "); 
+  Serial.println(Alarm.getTriggeredAlarmId());
 }
 
 void setHigh(int pin){
-  Serial.println("setHigh calling...");
   pinMode(pin, OUTPUT);
   digitalWrite(pin, HIGH);
+  Serial.println("setHigh calling...");
 }
 
 void setLow(int pin){
-  Serial.println("setLow calling...");
   pinMode(pin, OUTPUT);
   digitalWrite(pin, LOW);
+  Serial.println("setLow calling...");
 }
 
 uint8_t loadConfig() {
@@ -467,24 +492,11 @@ uint8_t loadConfig() {
 
   Serial.print("load storage data... rows: "); 
   Serial.println( rows);
-  Serial.print("configAddress: "); 
-  Serial.println(configAddress);
-
-  for(int i = 0; i < rows; i++){
-    Serial.print("version: "); 
-    Serial.println(storage[i].version);
-    Serial.print("minute: "); 
-    Serial.println(storage[i].minute);
-    Serial.print("hour: "); 
-    Serial.println(storage[i].hour);
-    Serial.print("weekday: "); 
-    Serial.println(storage[i].weekday);
-    Serial.print("duration: "); 
-    Serial.println(storage[i].duration);
-    Serial.print("pin#: "); 
-    Serial.println(storage[i].pin);
-  }
-  //return ( !strcmp(storage.version, CONFIG_VERSION));
+  //Serial.print("configAddress: "); 
+  //Serial.println(configAddress);
+  
+  printAlarms(rows);
+  //return ( !strcmp(storage.id, CONFIG_VERSION));
   return rows;
 }
 
@@ -498,12 +510,12 @@ void saveConfig(int count) {
   int configAddress  = EEPROM.getAddress(sizeof(StoreStruct)); // Size of config object
   EEPROM.writeBlock(configAddress, storage, count);
 
-  Serial.print("configAddress: "); 
-  Serial.println(configAddress);
+  //Serial.print("configAddress: "); 
+  //Serial.println(configAddress);
 
   for(int i = 0; i < count; i++){
-    Serial.print("version: "); 
-    Serial.println(storage[i].version);
+    Serial.print("id: "); 
+    Serial.println(storage[i].id);
     Serial.print("minute: "); 
     Serial.println(storage[i].minute);
     Serial.print("hour: "); 
@@ -518,28 +530,29 @@ void saveConfig(int count) {
 
 }
 
+
 void digitalClockDisplay()
 {
   // digital clock display of the time
-  Serial.print(hour());
+  Serial.print("\n");
+  Serial.print(hour(), DEC);
   printDigits(minute());
   printDigits(second());
   Serial.print(" ");
   Serial.print( getDayOfWeek(weekday()));
-  Serial.println(); 
+  Serial.print("\n"); 
 
-   digitalWrite( timeStatusPin, timeBlink);
-   timeBlink = !timeBlink;
-  
+   //digitalWrite( timeStatusPin, timeBlink);
+   //timeBlink = !timeBlink;
 }
 
 void printDigits(int digits)
 {
   Serial.print(":");
   if(digits < 10)
-    Serial.print('0');
+    Serial.print(0, DEC);
 
-  Serial.print(digits);
+  Serial.print(digits, DEC);
 }
 /*
 String getDayOfWeek(byte dow){
@@ -547,7 +560,7 @@ String getDayOfWeek(byte dow){
  return getDayOfWeek((int)dow);  
  }
  */
-String getDayOfWeek(byte dow){
+char* getDayOfWeek(byte dow){
   switch(dow){
   case 1:
     return "Sun";
@@ -564,7 +577,7 @@ String getDayOfWeek(byte dow){
   case 7:
     return "Sat";
   default:
-    return "*";
+    return " * ";
   }
 }
 
