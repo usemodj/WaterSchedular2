@@ -2,6 +2,8 @@
 #include <EEPROMEx.h>
 #include <Time.h>
 #include <TimeAlarms2.h>
+#include <SPI.h>
+#include <WiFi.h>
 
 /*
 Patterns
@@ -27,6 +29,13 @@ Patterns
  
  http://www.gammon.com.au/scripts/doc.php?lua=string.find
  http://arduino.cc/forum/index.php?topic=59917
+ 
+  Circuit:
+ * WiFi shield attached
+ *  only output digital pin 3, 5, 6, 8, 9  because of WiFi shield pins: 
+ *  13:SCK, 12: MISO, 11: MOSI, 10: SS for WiFi, 7: Handshake between shield and Arduino,
+ *   4: SS for SD card
+
  */
 
 // ID of the settings block
@@ -65,12 +74,45 @@ int  rows  = 0; //storage rows
 bool storageChanged = false;
 //bool timeBlink = false;
 
+char ssid[] = "baobab";      //  your network SSID (name) 
+char pass[] = "secretPassword";   // your network password
+int keyIndex = 0;                 // your network key Index number (needed only for WEP)
+int status = WL_IDLE_STATUS;
+
+WiFiServer server(80);
+WiFiClient client;
+
 void setup ()
 {
   //Serial.begin (19200);
   Serial.begin (9600);
 
-  Serial.println ();
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for Leonardo only
+  }
+ 
+  // check for the presence of the shield:
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("WiFi shield not present"); 
+    // don't continue:
+    while(true);
+  } 
+  
+  // attempt to connect to Wifi network:
+  while ( status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:    
+    //status = WiFi.begin(ssid, pass);
+    status = WiFi.begin(ssid);
+    // wait 10 seconds for connection:
+    Alarm.delay(2000);
+  } 
+  
+  server.begin();
+  // you're connected now, so print out the status:
+  printWifiStatus();
+
   pinMode( timeStatusPin, OUTPUT);
 
   //load config
@@ -92,8 +134,20 @@ void loop() {
       saveConfig( rows);
       registerAlarms( storage, rows);
     }
+  }  //end of serial.available()
+ 
+  // listen for incoming clients
+  client = server.available();
+  if (client) {
+    Serial.println("WiFi Server available...");
+     processHttpMessage(client);
+    // give the web browser time to receive the data
+    Alarm.delay(1);
+     // close the connection:
+     client.stop();
+     Serial.println("client disonnected");
   }
-
+  
   if(timeStatus() ==  timeNotSet){
     //Serial.println("Waiting for time sync ( T minute hour day month year):");
     digitalWrite( timeStatusPin, HIGH);
@@ -103,6 +157,59 @@ void loop() {
   digitalClockDisplay();
   Alarm.delay(1000); // wait one second between clock display
 
+}
+
+void processHttpMessage(WiFiClient client){
+    Serial.println("new client");
+    // an http request ends with a blank line
+    boolean currentLineIsBlank = true;
+    while (client.connected()) {
+      if (client.available()) {
+        char c = client.read();
+        Serial.write(c);
+        // if you've gotten to the end of the line (received a newline
+        // character) and the line is blank, the http request has ended,
+        // so you can send a reply
+        if (c == '\n' && currentLineIsBlank) {
+          // send a standard http response header
+          client.println("HTTP/1.1 200 OK");
+          client.println("Content-Type: text/html");
+          client.println("Connnection: close");
+          client.println();
+          client.println("<!DOCTYPE HTML>");
+          client.println("<html><head>");
+          // add a meta refresh tag, so the browser pulls again every 5 seconds:
+          client.println("<meta http-equiv=\"refresh\" content=\"5\">");
+          // output the value of each storage info
+          client.println("</head><body><table style='border:3px'><tr><th>Id</th><th>Time</th><th>Weekday</th><th>Duration</th><th>Pin#</th></tr>");
+          for (int i = 0; i < rows; i++) {
+            client.print("<tr><td>");
+            client.print(storage[i].id);
+            client.print("</td><td>");
+            client.print(storage[i].hour);
+            client.print(":");
+            client.print(storage[i].minute);
+            client.print("</td><td>");
+            client.print(storage[i].weekday);
+            client.print("</td><td>");
+            client.print(storage[i].duration);
+            client.print("</td><td>");
+            client.print(storage[i].pin);
+            client.print("</td></tr></table>");
+          }
+          client.println("</body></html>");
+           break;
+        }
+        if (c == '\n') {
+          // you're starting a new line
+          currentLineIsBlank = true;
+        } 
+        else if (c != '\r') {
+          // you've gotten a character on the current line
+          currentLineIsBlank = false;
+        }
+      }
+    }  
 }
 
 void registerAlarms( Storage *storagePtr, int count)
@@ -172,13 +279,6 @@ void processSyncMessage() {
       //String.length(): Returns the length of the String, in characters. (Note that this doesn't include a trailing null character.)
       inStr.toCharArray(charArr, inStr.length()+1);
       charArr[inStr.length()] = '\0';
-
-      //Serial.print("charArr: "); 
-      //Serial.println(charArr);
-      //Serial.print("inStr.length: "); Serial.println(inStr.length());
-      //Serial.print("charArr.length: "); Serial.println(strlen(charArr));
-      //MatchState ms(charArr);
-      //ms.Target(charArr);
       ms.Target(charArr, inStr.length()+1);
 
       if(inStr.startsWith( TIME_HEADER)) {
@@ -587,6 +687,46 @@ time_t requestSync()
   return 0; // the time will be sent later in response to serial mesg
 }
 
+void printWifiStatus() {
+  // print the SSID of the network you're attached to:
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
 
+  // print your WiFi shield's IP address:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+  
+  //print your WiFi shield's Mac address
+  printMacAddress();
+  
+  IPAddress subnet = WiFi.subnetMask();
+  Serial.print("Subnet Mask: ");
+  Serial.println(subnet);
+  
+  IPAddress gateway = WiFi.gatewayIP();
+  Serial.print("Gateway: ");
+  Serial.println(gateway);
+  
 
+  // print the received signal strength:
+  long rssi = WiFi.RSSI();
+  Serial.print("signal strength (RSSI):");
+  Serial.print(rssi);
+  Serial.println(" dBm");
+}
+
+void printMacAddress(){
+	byte mac[6];
+	WiFi.macAddress(mac);
+	Serial.print("MAC: ");
+	for(int i = 5; i >= 0; i--){
+		if(mac[i] < 0x10)
+			Serial.print("0");
+		Serial.print(mac[i], HEX);
+		if( i != 0) 
+			Serial.print(":");
+	}
+        Serial.println();
+}
 
