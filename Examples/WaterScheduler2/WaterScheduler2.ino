@@ -36,6 +36,11 @@ Patterns
  *  13:SCK, 12: MISO, 11: MOSI, 10: SS for WiFi, 7: Handshake between shield and Arduino,
  *   4: SS for SD card
 
+  Time message: "T minute hour day month year" --> "T 26 16 10 4 13" = 16:26 2013-4-10
+  Alarm message: "A id minute hour weekday(sunday:1) duration(minute) pin#" --> "A 1 26 16 4 2 8" = 16:26, Wednesday(4), 2(minute), 8(pin#)"  
+  Clear Alarm message: "C *"--> Clear all or "C id" --> Clear Alarm of id  
+  List of Alarms message: "L"
+
  */
 
 // ID of the settings block
@@ -314,6 +319,12 @@ void processSyncMessage() {
 
 }
 
+/*
+  Time message: "T minute hour day month year" --> "T 26 16 10 4 13" = 16:26 2013-4-10
+  Alarm message: "A id minute hour weekday(sunday:1) duration(minute) pin#" --> "A 1 26 16 4 2 8" = 16:26, Wednesday(4), 2(minute), 8(pin#)"  
+  Clear Alarm message: "C *"--> Clear all or "C id" --> Clear Alarm of id  
+  List of Alarms message: "L"
+*/
 void parseMessage(String msg){
   char charArr[msg.length()+1];
   MatchState ms;
@@ -322,27 +333,27 @@ void parseMessage(String msg){
       charArr[msg.length()] = '\0';
       
       ms.Target(charArr, msg.length()+1);
-      // message: "T minute hour day month year" --> "T 26 16 10 4 13" = 16:26 2013-4-10
+      //Time message: "T minute hour day month year" --> "T 26 16 10 4 13" = 16:26 2013-4-10
       if(msg.startsWith( TIME_HEADER)) {
         Serial.println("start time pattern...");
         ms.GlobalMatch( timePattern, time_match_callback);
         rows = loadConfig();
         registerAlarms( storage, rows);
-      }      
+      } //Alarm message: "A id minute hour weekday(sunday:1) duration(minute) pin#" --> "A 1 26 16 4 2 8" = 16:26, Wednesday(4), 2(minute), 8(pin#)"       
       else if(msg.startsWith(ALARM_HEADER)){
         //else if( ms.MatchCount(alarmPattern)> 0){
         Serial.println("start alarm pattern...");
         //ms.GlobalMatch( alarmPattern, alarm_match_callback);
         rows = parseAlarmMessage( charArr, rows);
-      }
+      } //Clear Alarm message: "C *"--> Clear all or "C id" --> Clear Alarm of id  
       else if(msg.startsWith( ALARM_CLEAR_HEADER)){
-        Serial.println("Clear alarm repeat...");
-        if(msg.endsWith("*")){
+        if(msg.endsWith("*")){ // Clear All Alarms
           rows = 0;
           EEPROM.write(0, rows);
           //free alarms
           freeAlarms();
-        } else {
+         Serial.println("Clear Alarms...");
+       } else { // Clear Alarm of id
           //the string doesn't start with a integral number, a zero is returned.
           long id = msg.substring(1).toInt();
           if(id > 0){
@@ -355,7 +366,7 @@ void parseMessage(String msg){
             saveConfig( rows);
           }
         }
-      }
+      } // List of Alarms message: "L"
       else if(msg.startsWith( ALARM_LIST_HEADER)){
         printAlarms( rows);
       }  
