@@ -5,8 +5,8 @@
 #include <Wire.h>  
 #include <DS1307RTC.h>  // a basic DS1307 library that returns time as a time_t
 
-//#include <SPI.h>
-//#include <WiFi.h>
+#include <SPI.h>
+#include <WiFi.h>
 
 /*
 Patterns
@@ -50,7 +50,6 @@ Patterns
 #define memoryBase 2
 
 #define TIME_HEADER  "T"   // Header tag for serial time sync message: T minute hour day month
-#define TIME_REQUEST  7    // ASCII bell character requests a time sync message 
 #define ALARM_HEADER "A"  // Header tag for serial alarm message: A minute hour weekday duration pin#
 #define ALARM_CLEAR_HEADER "C"  //Header tag for serial alarm clear
 #define ALARM_LIST_HEADER "L"
@@ -78,14 +77,13 @@ Storage storage[MAX_STORAGE];
 int  rows  = 0; //storage rows
 bool storageChanged = false;
 
-/*
 char ssid[] = "baobab";      //  your network SSID (name) 
- char pass[] = "secretPassword";   // your network password
- int keyIndex = 0;                 // your network key Index number (needed only for WEP)
- int status = WL_IDLE_STATUS;
- 
- WiFiServer server(80);
- */
+char pass[] = "secretPassword";   // your network password
+int keyIndex = 0;                 // your network key Index number (needed only for WEP)
+int status = WL_IDLE_STATUS;
+
+WiFiServer server(80);
+
 void setup ()
 {
   //Serial.begin (19200);
@@ -94,35 +92,30 @@ void setup ()
   while (!Serial) {
     ; // wait for serial port to connect. Needed for Leonardo only
   }
-  /* 
-   // check for the presence of the shield:
-   if (WiFi.status() == WL_NO_SHIELD) {
-   Serial.println("WiFi shield not present"); 
-   // don't continue:
-   while(true);
-   } 
-   
-   // attempt to connect to Wifi network:
-   while ( status != WL_CONNECTED) {
-   Serial.print("Attempting to connect to SSID: ");
-   Serial.println(ssid);
-   // Connect to WPA/WPA2 network. Change this line if using open or WEP network:    
-   //status = WiFi.begin(ssid, pass);
-   status = WiFi.begin(ssid);
-   // wait 10 seconds for connection:
-   Alarm.delay(2000);
-   } 
-   
-   server.begin();
-   // you're connected now, so print out the status:
-   printWifiStatus();
-   */
+
+  // check for the presence of the shield:
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("WiFi shield not present"); 
+    // don't continue:
+    while(true);
+  } 
+
+  // attempt to connect to Wifi network:
+  while ( status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:    
+    //status = WiFi.begin(ssid, pass);
+    status = WiFi.begin(ssid);
+    // wait 10 seconds for connection:
+    Alarm.delay(2000);
+  } 
+
+  server.begin();
+  // you're connected now, so print out the status:
+  //printWifiStatus();
+
   pinMode( timeStatusPin, OUTPUT);
-
-  //load config
-  rows = loadConfig();
-  registerAlarms( storage, rows);
-
   //set time
   setSyncProvider( RTC.get);  //set function to call when sync required
   if(timeStatus()!= timeSet) 
@@ -130,11 +123,16 @@ void setup ()
   else
     Serial.println("RTC has set the system time....");     
 
+  //load config
+  rows = loadConfig();
+  registerAlarms( storage, rows);
+
   Serial.println("Waiting for time sync( T minute hour day month year):");
 }  // end of setup  
 
 void loop() {
   // put your main code here, to run repeatedly: 
+  
   if(Serial.available() > 0){
     processSyncMessage(); 
 
@@ -144,7 +142,7 @@ void loop() {
       registerAlarms( storage, rows);
     }
   }  //end of serial.available()
-  /* 
+   
    // listen for incoming clients
    WiFiClient client = server.available();
    if (client) {
@@ -156,106 +154,126 @@ void loop() {
    client.stop();
    Serial.println("client disonnected");
    }
-   */
+   
   if(timeStatus() ==  timeNotSet){
     //Serial.println("Waiting for time sync ( T minute hour day month year):");
-    digitalWrite( timeStatusPin, HIGH);
-    Alarm.delay(200);
-    digitalWrite( timeStatusPin, LOW);
+    //digitalWrite( timeStatusPin, HIGH);
+    //Alarm.delay(200);
+    //digitalWrite( timeStatusPin, LOW);
   }
   digitalClockDisplay();
   Alarm.delay(1000); // wait one second between clock display
 
 }
-/*
+
 void processHttpMessage(WiFiClient client){
- Serial.println("new client");
- // an http request ends with a blank line
- boolean currentLineIsBlank = true;
- while (client.connected()) {
- if (client.available()) {
- char c = client.read();
- Serial.write(c);
+  Serial.println("new client");
+  // an http request ends with a blank line
+  boolean currentLineIsBlank = true;
+  String currentLine = "";
+  while (client.connected()) {
+    if (client.available()) {
+      char c = (char)client.read();
+      Serial.write(c);
+      
+      // if you've gotten to the end of the line (received a newline
+      // character) and the line is blank, the http request has ended,
+      // so you can send a reply
+      if (c == '\n' && currentLineIsBlank) {
+        Serial.print("currentLine: ");
+        Serial.println( currentLine);
+        String m = currentLine;
+       //if(m.indexOf("GET") != -1){
+          int sIdx = m.indexOf("?m=");
+          int eIdx = m.indexOf("HTTP", sIdx+3);
+          Serial.print("start index: "); Serial.println( sIdx);
+          Serial.print("end index: "); Serial.println( eIdx);
+         if(sIdx != -1 && eIdx != -1){
+            m = m.substring(sIdx+3, eIdx);
+            m.replace("%20", " ");
+            m.replace("+", " ");
+            m.trim();
+            Serial.print("message: ");
+            Serial.println( m);
+            parseMessage(m);
+          }
+        //}
+        // send a standard http response header
+        Serial.println("send a standard http response header...");
+        printHtmlPage( client);
+        break;
+      }
+
+      if (c == '\n') {
+        // you're starting a new line
+        currentLineIsBlank = true;
+      } 
+      else if (c != '\r'){
+        // you've gotten a character on the current line
+        currentLineIsBlank = false;
+        currentLine += c;
+      }
+    } // if client.available()
+  }  //end of while client.connected()
+}
+
+void printHtmlPage(WiFiClient client){
+    client.print(F("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n"));
+    client.println(F("<html><head><script type=\"text/javascript\">"));
+    client.println(F("function show_alert() {alert(\"Send Message\";}"));
+    client.println(F("</script></head"));
+    client.println(F("<body><H1>Water Scheduler2</H1>"));
+    client.println(F("<form method=GET onSubmit=\"show_alert()\">Message: <input type=text name=m>&nbsp;"));
+    client.println(F("<input type=submit></form>"));
+    // output the value of each storage info
+    client.println(F("<table border=1 style='border:3px;span:5px;'><tr><th>Id</th><th>Time</th><th>Weekday</th><th>Duration</th><th>Pin#</th></tr>"));
+    for (int i = 0; i < rows; i++) {
+      client.print(F("<tr><td>"));
+      client.print(storage[i].id);
+      client.print(F("</td><td>"));
+      client.print(storage[i].hour);
+      client.print(F(":"));
+      client.print(storage[i].minute);
+      client.print(F("</td><td>"));
+      client.print(storage[i].weekday);
+      client.print(F("</td><td>"));
+      client.print(storage[i].duration);
+      client.print(F("</td><td>"));
+      client.print(storage[i].pin);
+      client.println(F("</td></tr>"));
+    }
+    client.println(F("</table>"));
+    client.println(F("</body></html>"));
  
- // if you've gotten to the end of the line (received a newline
- // character) and the line is blank, the http request has ended,
- // so you can send a reply
- if (c == '\n' && currentLineIsBlank) {
- // send a standard http response header
- Serial.println("send a standard http response header...");
- client.print(F("HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<html>"));
- 
- client.println(F("<head><script type=\"text/javascript\">"));
- client.println(F("function show_alert() {alert(\"This is an alert\");}"));
- client.println(F("</script></head"));
- client.println(F("<body><H1>TEST</H1>"));
- client.println(F("<form method=GET onSubmit=\"show_alert()\">T: <input type=text name=t><br>"));
- client.println(F("R: <input type=text name=r><br><input type=submit></form>"));
- // output the value of each storage info
- client.println(F("<table border=1 style='border:3px;span:5px;'><tr><th>Id</th><th>Time</th><th>Weekday</th><th>Duration</th><th>Pin#</th></tr>"));
- for (int i = 0; i < rows; i++) {
- client.print(F("<tr><td>"));
- client.print(storage[i].id);
- client.print(F("</td><td>"));
- client.print(storage[i].hour);
- client.print(F(":"));
- client.print(storage[i].minute);
- client.print(F("</td><td>"));
- client.print(storage[i].weekday);
- client.print(F("</td><td>"));
- client.print(storage[i].duration);
- client.print(F("</td><td>"));
- client.print(storage[i].pin);
- client.println(F("</td></tr>"));
- }
- client.println(F("</table>"));
- client.println(F("</body></html>"));
- //client.stop();
- 
- 
- //          client.println("HTTP/1.1 200 OK");
- //          client.println("Content-Type: text/html");
- //          client.println("Connnection: close");
- //          client.println();
- //          client.println("<!DOCTYPE HTML>");
- //          client.println("<html><head>");
- //          // add a meta refresh tag, so the browser pulls again every 5 seconds:
- //          //client.println("<meta http-equiv=\"refresh\" content=\"10\">");
- //          // output the value of each storage info
- //          client.println("</head><body><table border=1 style='border:3px;span:5px;'><tr><th>Id</th><th>Time</th><th>Weekday</th><th>Duration</th><th>Pin#</th></tr>");
- //          for (int i = 0; i < rows; i++) {
- //            client.print("<tr><td>");
- //            client.print(storage[i].id);
- //            client.print("</td><td>");
- //            client.print(storage[i].hour);
- //            client.print(":");
- //            client.print(storage[i].minute);
- //            client.print("</td><td>");
- //            client.print(storage[i].weekday);
- //            client.print("</td><td>");
- //            client.print(storage[i].duration);
- //            client.print("</td><td>");
- //            client.print(storage[i].pin);
- //            client.println("</td></tr></table>");
- //          }
- //          
- //          client.println("</body></html>");
- 
- break;
- }
- 
- if (c == '\n') {
- // you're starting a new line
- currentLineIsBlank = true;
- } 
- else if (c != '\r') {
- // you've gotten a character on the current line
- currentLineIsBlank = false;
- }
- }
- }  
- }
- */
+    //          client.println("HTTP/1.1 200 OK");
+    //          client.println("Content-Type: text/html");
+    //          client.println("Connnection: close");
+    //          client.println();
+    //          client.println("<!DOCTYPE HTML>");
+    //          client.println("<html><head>");
+    //          // add a meta refresh tag, so the browser pulls again every 5 seconds:
+    //          //client.println("<meta http-equiv=\"refresh\" content=\"10\">");
+    //          // output the value of each storage info
+    //          client.println("</head><body><table border=1 style='border:3px;span:5px;'><tr><th>Id</th><th>Time</th><th>Weekday</th><th>Duration</th><th>Pin#</th></tr>");
+    //          for (int i = 0; i < rows; i++) {
+    //            client.print("<tr><td>");
+    //            client.print(storage[i].id);
+    //            client.print("</td><td>");
+    //            client.print(storage[i].hour);
+    //            client.print(":");
+    //            client.print(storage[i].minute);
+    //            client.print("</td><td>");
+    //            client.print(storage[i].weekday);
+    //            client.print("</td><td>");
+    //            client.print(storage[i].duration);
+    //            client.print("</td><td>");
+    //            client.print(storage[i].pin);
+    //            client.println("</td></tr></table>");
+    //          }
+    //          
+    //          client.println("</body></html>");
+}
+
 void registerAlarms( Storage *storagePtr, int count)
 {
   timeDayOfWeek_t dow;
@@ -542,14 +560,14 @@ void parseTimeMessage(String msg){
   msg.toCharArray(charArr, msg.length()+1);
   charArr[msg.length()] = '\0';
 
-  Serial.print("Splitting string into tokens: "); 
-  Serial.println(charArr);
+  //Serial.print("Splitting string into tokens: "); 
+  //Serial.println(charArr);
   int j =0;
   pch = strtok(charArr, " ");
   while(pch != NULL)
   {
     cap[j++] = atoi(pch);
-    Serial.println( pch);
+    //Serial.println( pch);
     pch = strtok(NULL, " ");
   }
   if(j != 5) {
@@ -574,19 +592,19 @@ int parseAlarmMessage(String msg, int count){
   msg.toCharArray(charArr, msg.length()+1);
   charArr[msg.length()] = '\0';
 
-  Serial.print("Splitting string into tokens: "); 
-  Serial.println(charArr);
+  //Serial.print("Splitting string into tokens: "); 
+  //Serial.println(charArr);
 
   int  i = 0, j = 0;
   pch = strtok (charArr,"A");
   while (pch != NULL)
   {
     pstr[i++] = pch;
-    Serial.println( pstr[i-1]);
+    //Serial.println( pstr[i-1]);
     pch = strtok (NULL, "A");
   }
 
-  Serial.println("==========");
+  //Serial.println("==========");
   strLen = i;
   for(i =0; i < strLen; i++)
   {
@@ -595,7 +613,7 @@ int parseAlarmMessage(String msg, int count){
     while(pch != NULL)
     {
       cap[j++] = atoi(pch);
-      Serial.println( pch);
+      //Serial.println( pch);
       pch = strtok(NULL, " ");
     }
     if(j != 6) {
@@ -609,8 +627,8 @@ int parseAlarmMessage(String msg, int count){
     inStorage.weekday = (cap[3]);
     inStorage.duration =  (cap[4]);
     inStorage.pin =  (cap[5]);
-    Serial.print("---id:"); 
-    Serial.println(inStorage.id);
+    //Serial.print("---id:"); 
+    //Serial.println(inStorage.id);
 
     //update or add alarm storage
     int k = 0;
@@ -631,8 +649,8 @@ int parseAlarmMessage(String msg, int count){
       copyStorage( &storage[k], &inStorage); 
       //Serial.print("storage[j].id:"); Serial.println(storage[j].id);
       count++;
-      Serial.print("callback rows: "); 
-      Serial.println(rows);
+      //Serial.print("callback rows: "); 
+      //Serial.println(rows);
       storageChanged = true;
     }
     else if(k >= MAX_STORAGE){
@@ -720,21 +738,23 @@ void saveConfig(int count) {
 
   //Serial.print("configAddress: "); 
   //Serial.println(configAddress);
+  /*
   for(int i = 0; i < count; i++){
-    if(storage[i].id == 0) continue;
-    Serial.print("id: "); 
-    Serial.println(storage[i].id);
-    Serial.print("minute: "); 
-    Serial.println(storage[i].minute);
-    Serial.print("hour: "); 
-    Serial.println(storage[i].hour);
-    Serial.print("weekday: "); 
-    Serial.println(storage[i].weekday);
-    Serial.print("duration: "); 
-    Serial.println(storage[i].duration);
-    Serial.print("pin#: "); 
-    Serial.println(storage[i].pin);
-  }
+   if(storage[i].id == 0) continue;
+   Serial.print("id: "); 
+   Serial.println(storage[i].id);
+   Serial.print("minute: "); 
+   Serial.println(storage[i].minute);
+   Serial.print("hour: "); 
+   Serial.println(storage[i].hour);
+   Serial.print("weekday: "); 
+   Serial.println(storage[i].weekday);
+   Serial.print("duration: "); 
+   Serial.println(storage[i].duration);
+   Serial.print("pin#: "); 
+   Serial.println(storage[i].pin);
+   }
+   */
 }
 
 void digitalClockDisplay()
@@ -826,4 +846,5 @@ void printWifiStatus() {
  Serial.println();
  }
  */
+
 
